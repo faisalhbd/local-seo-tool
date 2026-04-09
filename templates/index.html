@@ -357,6 +357,11 @@
       </div>
 
       {% if recent_pages %}
+      <div style="display:flex;align-items:center;justify-content:flex-end;margin-bottom:10px;">
+        <button onclick="clearAllHistory()" id="clear-history-btn" style="background:#c0392b;color:white;border:none;border-radius:6px;padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;font-family:'Oswald',sans-serif;letter-spacing:0.05em;text-transform:uppercase;display:flex;align-items:center;gap:6px;transition:background 0.15s;">
+          🗑 Clear All History
+        </button>
+      </div>
       <table class="pages-table" id="pages-table">
         <thead>
           <tr>
@@ -365,12 +370,12 @@
             <th>ZIP</th>
             <th>AI Used</th>
             <th>Blogspot URL</th>
-            <th>Preview</th>
+            <th style="text-align:center;">Actions</th>
           </tr>
         </thead>
         <tbody id="pages-tbody">
           {% for page in recent_pages %}
-          <tr>
+          <tr id="row-{{ page[4] }}">
             <td><div class="table-city">{{ page[1] }}, {{ page[0] }}</div></td>
             <td><div class="table-kw" title="{{ page[3] or '' }}">{{ (page[3] or '—')[:40] }}</div></td>
             <td>{{ page[2] }}</td>
@@ -378,7 +383,12 @@
             <td style="font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
               {% if page[6] %}<a href="{{ page[6] }}" target="_blank" style="color:var(--orange);font-size:11px;">{{ page[6]|replace('https://','') }}</a>{% else %}—{% endif %}
             </td>
-            <td><a href="/preview/{{ page[4] }}" target="_blank" class="table-link">View ↗</a></td>
+            <td style="text-align:center;white-space:nowrap;">
+              <a href="/preview/{{ page[4] }}" target="_blank" title="Live Preview" style="display:inline-flex;align-items:center;gap:3px;padding:4px 8px;background:#1a6b3a;color:white;border-radius:4px;text-decoration:none;font-size:11px;font-weight:700;margin:2px;">👁 Preview</a>
+              <a href="/preview-raw/{{ page[4] }}" target="_blank" title="View Raw HTML Source" style="display:inline-flex;align-items:center;gap:3px;padding:4px 8px;background:#2c3e6e;color:white;border-radius:4px;text-decoration:none;font-size:11px;font-weight:700;margin:2px;">📄 Raw</a>
+              <a href="/download/{{ page[4] }}" download="{{ page[4] }}" title="Download HTML File" style="display:inline-flex;align-items:center;gap:3px;padding:4px 8px;background:#7d4e00;color:white;border-radius:4px;text-decoration:none;font-size:11px;font-weight:700;margin:2px;">⬇ Download</a>
+              <button onclick="deletePage('{{ page[4] }}')" title="Delete Page" style="display:inline-flex;align-items:center;gap:3px;padding:4px 8px;background:#7a1c1c;color:white;border-radius:4px;border:none;cursor:pointer;font-size:11px;font-weight:700;margin:2px;font-family:inherit;">🗑 Delete</button>
+            </td>
           </tr>
           {% endfor %}
         </tbody>
@@ -585,6 +595,52 @@ function loadAllPages() {
     ).join('');
   });
 }
+
+async function clearAllHistory() {
+  if (!confirm('⚠️ Are you sure you want to clear ALL history?\n\nThis will permanently delete all generated pages from database and files. Cannot be undone!')) return;
+  const btn = document.getElementById('clear-history-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Clearing...';
+  try {
+    const res = await fetch('/api/clear-history', { method: 'POST', headers: {'Content-Type':'application/json'} });
+    const data = await res.json();
+    if (data.success) {
+      document.getElementById('pages-tbody').innerHTML = '<tr><td colspan="6" style="text-align:center;padding:30px;color:#aaa;">No pages yet. Generate your first page!</td></tr>';
+      document.getElementById('pages-badge').textContent = '0 pages';
+      showNotification('✅ ' + data.message);
+      setTimeout(() => location.reload(), 1800);
+    } else {
+      showNotification('❌ Error: ' + data.error);
+      btn.disabled = false;
+      btn.innerHTML = '🗑 Clear All History';
+    }
+  } catch(e) {
+    showNotification('❌ Network error: ' + e.message);
+    btn.disabled = false;
+    btn.innerHTML = '🗑 Clear All History';
+  }
+}
+
+async function deletePage(filename) {
+  if (!confirm('Delete "' + filename + '"?\n\nThis removes it from history and deletes the file permanently.')) return;
+  try {
+    const res = await fetch('/api/delete-page/' + encodeURIComponent(filename), { method: 'POST' });
+    const data = await res.json();
+    if (data.success) {
+      const row = document.getElementById('row-' + filename);
+      if (row) { row.style.opacity = '0'; row.style.transition = 'opacity 0.3s'; setTimeout(() => row.remove(), 300); }
+      const badge = document.getElementById('pages-badge');
+      const cur = parseInt(badge.textContent) || 0;
+      badge.textContent = Math.max(0, cur - 1) + ' pages';
+      showNotification('🗑 Deleted: ' + filename);
+    } else {
+      showNotification('❌ Error: ' + data.error);
+    }
+  } catch(e) {
+    showNotification('❌ Network error: ' + e.message);
+  }
+}
+
 
 function showNotification(msg, type='') {
   const n = document.getElementById('notification');
