@@ -88,13 +88,14 @@ def init_db():
         title TEXT, meta_description TEXT, primary_keyword TEXT, long_tail_keywords TEXT,
         ai_provider TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
+    c.execute('''CREATE TABLE IF NOT EXISTS ai_keys (
+        provider TEXT PRIMARY KEY, api_key TEXT NOT NULL, active INTEGER DEFAULT 1,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )''')
     c.execute('''CREATE TABLE IF NOT EXISTS page_tokens (
         filename TEXT PRIMARY KEY,
         token TEXT NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )''')
-        provider TEXT PRIMARY KEY, api_key TEXT NOT NULL, active INTEGER DEFAULT 1,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
     conn.commit()
     conn.close()
@@ -203,7 +204,7 @@ def verify_token(filename, token):
     conn.close()
     return row and row[0] == token
 
-city, state, state_abbr, zip_code, county):
+def generate_seo_content(city, state, state_abbr, zip_code, county):
     saved_keys = get_saved_provider_keys()
     if not saved_keys:
         raise RuntimeError('No AI provider key found. Please save a valid Groq, Together, OpenRouter, or Anthropic key before generating pages.')
