@@ -747,15 +747,19 @@ def api_generate():
 
 @app.route('/preview/<filename>')
 def preview_page(filename):
-    if filename not in session.get('generated_pages', []):
-        return "Page not found or access denied", 404
-    return send_from_directory(OUTPUT_DIR, filename)
+    safe_name = os.path.basename(filename)
+    fpath = os.path.join(OUTPUT_DIR, safe_name)
+    if not os.path.exists(fpath):
+        return "Page not found", 404
+    return send_from_directory(OUTPUT_DIR, safe_name)
 
 @app.route('/download/<filename>')
 def download_page(filename):
-    if filename not in session.get('generated_pages', []):
-        return "Page not found or access denied", 404
-    return send_from_directory(OUTPUT_DIR, filename, as_attachment=True)
+    safe_name = os.path.basename(filename)
+    fpath = os.path.join(OUTPUT_DIR, safe_name)
+    if not os.path.exists(fpath):
+        return "File not found", 404
+    return send_from_directory(OUTPUT_DIR, safe_name, as_attachment=True)
 
 @app.route('/sitemap.xml')
 def sitemap():
@@ -768,6 +772,86 @@ def list_pages():
     c.execute('SELECT state,city,zip_code,county,filename,title,primary_keyword,ai_provider,blogspot_url,created_at FROM generated_pages ORDER BY created_at DESC')
     pages = c.fetchall(); conn.close()
     return jsonify([{'state':p[0],'city':p[1],'zip':p[2],'county':p[3],'filename':p[4],'title':p[5],'keyword':p[6],'provider':p[7],'blogspot_url':p[8],'created':p[9]} for p in pages])
+
+@app.route('/api/clear-history', methods=['POST'])
+def clear_history():
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute('SELECT filename FROM generated_pages')
+        files = c.fetchall()
+        c.execute('DELETE FROM generated_pages')
+        conn.commit(); conn.close()
+        deleted_files = 0
+        for (fname,) in files:
+            fpath = os.path.join(OUTPUT_DIR, fname)
+            if os.path.exists(fpath):
+                os.remove(fpath)
+                deleted_files += 1
+        session.pop('generated_pages', None)
+        return jsonify({'success': True, 'message': f'History cleared. {len(files)} records and {deleted_files} files deleted.'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/delete-page/<filename>', methods=['POST'])
+def delete_page(filename):
+    try:
+        safe_name = os.path.basename(filename)
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute('SELECT filename FROM generated_pages WHERE filename=?', (safe_name,))
+        row = c.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Page not found in database'}), 404
+        c.execute('DELETE FROM generated_pages WHERE filename=?', (safe_name,))
+        conn.commit(); conn.close()
+        fpath = os.path.join(OUTPUT_DIR, safe_name)
+        if os.path.exists(fpath):
+            os.remove(fpath)
+        generated = session.get('generated_pages', [])
+        if safe_name in generated:
+            generated.remove(safe_name)
+            session['generated_pages'] = generated
+        return jsonify({'success': True, 'message': f'{safe_name} deleted successfully.'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/preview-raw/<filename>')
+def preview_raw(filename):
+    safe_name = os.path.basename(filename)
+    fpath = os.path.join(OUTPUT_DIR, safe_name)
+    if not os.path.exists(fpath):
+        return "File not found", 404
+    with open(fpath, 'r', encoding='utf-8') as f:
+        raw_html = f.read()
+    escaped = raw_html.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    page = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>RAW SOURCE — {safe_name}</title>
+<style>
+  body {{ background: #0d0d0d; color: #c8f5c8; font-family: 'Courier New', monospace; font-size: 13px; padding: 20px; margin: 0; }}
+  .toolbar {{ position: sticky; top: 0; background: #1a1a1a; border-bottom: 1px solid #333; padding: 12px 16px; display: flex; align-items: center; gap: 12px; margin-bottom: 20px; z-index: 100; }}
+  .toolbar span {{ color: #ff6b2b; font-weight: bold; font-size: 14px; }}
+  .toolbar a {{ background: #ff6b2b; color: white; padding: 6px 14px; border-radius: 6px; text-decoration: none; font-size: 12px; font-weight: bold; }}
+  .toolbar a:hover {{ background: #c44207; }}
+  pre {{ white-space: pre-wrap; word-break: break-all; line-height: 1.6; margin: 0; }}
+  .line-num {{ color: #555; user-select: none; display: inline-block; min-width: 40px; text-align: right; margin-right: 12px; }}
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <span>📄 RAW SOURCE: {safe_name}</span>
+  <a href="/download/{safe_name}" download="{safe_name}">⬇ Download HTML</a>
+  <a href="/preview/{safe_name}" target="_blank">👁 Live Preview</a>
+</div>
+<pre>"""
+    for i, line in enumerate(escaped.splitlines(), 1):
+        page += f'<span class="line-num">{i}</span>{line}\n'
+    page += "</pre></body></html>"
+    return page
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
