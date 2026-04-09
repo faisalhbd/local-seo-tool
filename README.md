@@ -86,3 +86,4 @@ local_seo_tool/
 │   └── index.html      # Dashboard UI
 └── generated_pages/    # Output HTML files + sitemap.xml
 ```
+"# local-seo-tool" 
