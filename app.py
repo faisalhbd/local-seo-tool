@@ -4,7 +4,7 @@ Multi-AI Support: Anthropic, Groq, Together AI, OpenRouter
 Blogspot URL Structure: dumpsterCityStateZip.blogspot.com
 """
 
-import os, json, sqlite3, re, requests, secrets
+import os, json, sqlite3, re, requests
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify, send_from_directory, session
 import sys
@@ -92,11 +92,6 @@ def init_db():
         provider TEXT PRIMARY KEY, api_key TEXT NOT NULL, active INTEGER DEFAULT 1,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
-    c.execute('''CREATE TABLE IF NOT EXISTS page_tokens (
-        filename TEXT PRIMARY KEY,
-        token TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )''')
     conn.commit()
     conn.close()
 
@@ -181,28 +176,6 @@ def call_ai_anthropic(api_key, prompt):
     r = requests.post(AI_PROVIDERS["anthropic"]["url"], headers=headers, json=payload, timeout=45)
     r.raise_for_status()
     return r.json()["content"][0]["text"].strip()
-
-def get_or_create_token(filename):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute('SELECT token FROM page_tokens WHERE filename=?', (filename,))
-    row = c.fetchone()
-    if row:
-        conn.close()
-        return row[0]
-    token = secrets.token_urlsafe(32)
-    c.execute('INSERT INTO page_tokens (filename, token) VALUES (?,?)', (filename, token))
-    conn.commit()
-    conn.close()
-    return token
-
-def verify_token(filename, token):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute('SELECT token FROM page_tokens WHERE filename=?', (filename,))
-    row = c.fetchone()
-    conn.close()
-    return row and row[0] == token
 
 def generate_seo_content(city, state, state_abbr, zip_code, county):
     saved_keys = get_saved_provider_keys()
@@ -747,14 +720,11 @@ def api_generate():
     existing = c.fetchone(); conn.close()
     provider, api_key = get_active_provider()
     if existing and os.path.exists(os.path.join(OUTPUT_DIR, filename)) and not provider:
-        token = get_or_create_token(filename)
         generated = session.get('generated_pages', [])
         if filename not in generated:
             generated.append(filename)
             session['generated_pages'] = generated
-        return jsonify({'success': True, 'filename': filename, 'cached': True, 'blogspot_url': blogspot_url,
-                        'preview_url': f'/preview/{filename}?token={token}',
-                        'message': 'Page already exists'})
+        return jsonify({'success': True, 'filename': filename, 'cached': True, 'blogspot_url': blogspot_url, 'message': 'Page already exists'})
     try:
         content = generate_seo_content(city, state, state_abbr, zip_code, county)
     except Exception as e:
@@ -769,9 +739,7 @@ def api_generate():
         session['generated_pages'] = generated
     with open(os.path.join(OUTPUT_DIR, 'sitemap.xml'), 'w') as f:
         f.write(generate_sitemap())
-    token = get_or_create_token(filename)
     return jsonify({'success': True, 'filename': filename, 'cached': False, 'blogspot_url': blogspot_url,
-                    'preview_url': f'/preview/{filename}?token={token}',
                     'meta_title': content['meta_title'], 'primary_keyword': content['primary_keyword'],
                     'long_tail_keywords': content['long_tail_keywords'][:6],
                     'ai_provider': content.get('ai_provider','fallback'),
@@ -779,16 +747,14 @@ def api_generate():
 
 @app.route('/preview/<filename>')
 def preview_page(filename):
-    token = request.args.get('token', '')
-    if not token or not verify_token(filename, token):
-        return "Access denied. Invalid or missing token.", 403
+    if filename not in session.get('generated_pages', []):
+        return "Page not found or access denied", 404
     return send_from_directory(OUTPUT_DIR, filename)
 
 @app.route('/download/<filename>')
 def download_page(filename):
-    token = request.args.get('token', '')
-    if not token or not verify_token(filename, token):
-        return "Access denied. Invalid or missing token.", 403
+    if filename not in session.get('generated_pages', []):
+        return "Page not found or access denied", 404
     return send_from_directory(OUTPUT_DIR, filename, as_attachment=True)
 
 @app.route('/sitemap.xml')
