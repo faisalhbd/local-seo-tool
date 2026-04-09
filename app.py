@@ -4,9 +4,9 @@ Multi-AI Support: Anthropic, Groq, Together AI, OpenRouter
 Blogspot URL Structure: dumpsterCityStateZip.blogspot.com
 """
 
-import os, json, sqlite3, re, requests
+import os, json, sqlite3, re, requests, secrets
 from datetime import datetime
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify, send_from_directory, session
 import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from data.locations import US_LOCATIONS
@@ -57,7 +57,11 @@ AI_PROVIDERS = {
     "openrouter": {
         "name": "OpenRouter (FREE models)",
         "url": "https://openrouter.ai/api/v1/chat/completions",
-        "model": "meta-llama/llama-3.1-8b-instruct:free",
+        "model": "openai/gpt-oss-120b:free",
+        "models": [
+            "openai/gpt-oss-120b:free",
+            "nvidia/nemotron-3-super-120b-a12b:free"
+        ],
         "free": True,
         "signup": "https://openrouter.ai",
         "header_key": "Authorization",
@@ -84,7 +88,11 @@ def init_db():
         title TEXT, meta_description TEXT, primary_keyword TEXT, long_tail_keywords TEXT,
         ai_provider TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
-    c.execute('''CREATE TABLE IF NOT EXISTS ai_keys (
+    c.execute('''CREATE TABLE IF NOT EXISTS page_tokens (
+        filename TEXT PRIMARY KEY,
+        token TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )''')
         provider TEXT PRIMARY KEY, api_key TEXT NOT NULL, active INTEGER DEFAULT 1,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
@@ -94,39 +102,26 @@ def init_db():
 init_db()
 
 def get_ai_key(provider):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute('SELECT api_key FROM ai_keys WHERE provider=? AND active=1', (provider,))
-    row = c.fetchone()
-    conn.close()
-    return row[0] if row else None
+    keys = session.get('ai_keys', {})
+    return keys.get(provider)
 
 def save_ai_key(provider, key):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute('INSERT OR REPLACE INTO ai_keys (provider, api_key, active, updated_at) VALUES (?,?,1,?)',
-              (provider, key, datetime.now()))
-    conn.commit()
-    conn.close()
+    keys = session.get('ai_keys', {})
+    keys[provider] = key
+    session['ai_keys'] = keys
 
 def get_all_keys():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute('SELECT provider, api_key, active FROM ai_keys')
-    rows = {r[0]: {"key": r[1][:8]+"****", "active": bool(r[2])} for r in c.fetchall()}
-    conn.close()
-    return rows
+    keys = session.get('ai_keys', {})
+    return {p: {"key": k[:8]+"****", "active": True} for p, k in keys.items()}
+
+def get_saved_provider_keys():
+    return session.get('ai_keys', {})
 
 def get_active_provider():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
+    keys = get_saved_provider_keys()
     for p in ["groq","together","openrouter","anthropic"]:
-        c.execute('SELECT api_key FROM ai_keys WHERE provider=? AND active=1', (p,))
-        row = c.fetchone()
-        if row:
-            conn.close()
-            return p, row[0]
-    conn.close()
+        if p in keys:
+            return p, keys[p]
     return None, None
 
 def build_blogspot_url(city, state_abbr, zip_code):
@@ -186,8 +181,33 @@ def call_ai_anthropic(api_key, prompt):
     r.raise_for_status()
     return r.json()["content"][0]["text"].strip()
 
-def generate_seo_content(city, state, state_abbr, zip_code, county):
-    provider, api_key = get_active_provider()
+def get_or_create_token(filename):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('SELECT token FROM page_tokens WHERE filename=?', (filename,))
+    row = c.fetchone()
+    if row:
+        conn.close()
+        return row[0]
+    token = secrets.token_urlsafe(32)
+    c.execute('INSERT INTO page_tokens (filename, token) VALUES (?,?)', (filename, token))
+    conn.commit()
+    conn.close()
+    return token
+
+def verify_token(filename, token):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('SELECT token FROM page_tokens WHERE filename=?', (filename,))
+    row = c.fetchone()
+    conn.close()
+    return row and row[0] == token
+
+city, state, state_abbr, zip_code, county):
+    saved_keys = get_saved_provider_keys()
+    if not saved_keys:
+        raise RuntimeError('No AI provider key found. Please save a valid Groq, Together, OpenRouter, or Anthropic key before generating pages.')
+    providers_to_try = [p for p in ["groq","together","openrouter","anthropic"] if p in saved_keys]
     keywords = get_long_tail_keywords(city, state_abbr, zip_code, county)
     primary_kw = f"commercial dumpster rental {city} {state_abbr}"
     county_short = county.replace(" County", "").replace(" Parish", "")
@@ -219,22 +239,32 @@ WRITING RULES (VERY IMPORTANT):
 5. The 4 why_us_points must each mention {city} or {county} in their descriptions
 6. Write naturally — do NOT keyword-stuff
 7. B2B focus only — contractors, construction companies, commercial property managers
+8. H1 must be UNDER 65 characters — short and punchy, city + keyword only
+9. meta_description must be between 140-155 characters exactly — always include phone
+10. NEVER start intro_paragraph with phrases like "As a leading provider" or "Located in the heart of" — write originally
+11. Every intro_paragraph must mention a specific local industry, landmark, or economic fact unique to {city}
+12. meta_title must be UNDER 60 characters — count carefully before responding
 
 Respond ONLY with this exact JSON structure (no markdown, no preamble, no extra text):
-{{"meta_title":"[Max 60 chars] Commercial Dumpster Rental {city} {state_abbr} | Pro Dumpster Rental","meta_description":"[Max 155 chars with phone and CTA, include {city} and {zip_code}]","h1":"[Unique H1 with primary keyword and {city}]","hero_subtitle":"[1 sentence about serving {county} contractors]","intro_paragraph":"[4+ sentences unique to {city} — mention local construction market, {county}, ZIP {zip_code}, B2B focus]","why_us_points":[{{"title":"[Point 1 title]","desc":"[2 sentences mentioning {city} or {county}]"}},{{"title":"[Point 2 title]","desc":"[2 sentences]"}},{{"title":"[Point 3 title]","desc":"[2 sentences mentioning {city}]"}},{{"title":"[Point 4 title]","desc":"[2 sentences]"}}],"service_area_paragraph":"[3+ sentences about serving {city}, {county}, ZIP {zip_code} — mention nearby areas]","cta_headline":"[Strong CTA headline with {city} {state_abbr}]","faq":[{{"q":"[FAQ about getting a dumpster in {city}]","a":"[2 sentence answer with phone number]"}},{{"q":"[FAQ about construction waste types in {city} area]","a":"[2 sentence answer]"}},{{"q":"[FAQ about dumpster sizes for {city} projects]","a":"[2 sentence answer]"}},{{"q":"[FAQ about service coverage near {city} and {county}]","a":"[2 sentence answer]"}}],"schema_description":"[2-3 sentence LocalBusiness description for {city}, {state_abbr}]","og_description":"[1-2 sentence social share description for {city} service]"}}"""
+{{"meta_title":"[STRICT MAX 60 chars — example: Commercial Dumpster Rental {city}, {state_abbr}]","meta_description":"[STRICT 140-155 chars — include phone (619) 759-6533 and {city} and {zip_code}]","h1":"[STRICT MAX 65 chars — city + primary keyword only]","hero_subtitle":"[1 sentence about serving {county} contractors]","intro_paragraph":"[4+ sentences unique to {city} — mention local construction market, {county}, ZIP {zip_code}, B2B focus]","why_us_points":[{{"title":"[Point 1 title]","desc":"[2 sentences mentioning {city} or {county}]"}},{{"title":"[Point 2 title]","desc":"[2 sentences]"}},{{"title":"[Point 3 title]","desc":"[2 sentences mentioning {city}]"}},{{"title":"[Point 4 title]","desc":"[2 sentences]"}}],"service_area_paragraph":"[3+ sentences about serving {city}, {county}, ZIP {zip_code} — mention nearby areas]","cta_headline":"[Strong CTA headline with {city} {state_abbr}]","faq":[{{"q":"[FAQ about getting a dumpster in {city}]","a":"[2 sentence answer with phone number]"}},{{"q":"[FAQ about construction waste types in {city} area]","a":"[2 sentence answer]"}},{{"q":"[FAQ about dumpster sizes for {city} projects]","a":"[2 sentence answer]"}},{{"q":"[FAQ about service coverage near {city} and {county}]","a":"[2 sentence answer]"}}],"schema_description":"[2-3 sentence LocalBusiness description for {city}, {state_abbr}]","og_description":"[1-2 sentence social share description for {city} service]"}}"""
 
     raw = None
-    used_provider = "fallback"
+    used_provider = None
+    errors = []
 
-    if provider and api_key:
+    for provider in providers_to_try:
+        api_key = saved_keys.get(provider)
         try:
             if provider == "anthropic":
                 raw = call_ai_anthropic(api_key, prompt)
             else:
                 raw = call_ai_openai_compat(provider, api_key, prompt)
             used_provider = provider
+            break
         except Exception as e:
             print(f"AI Error ({provider}): {e}")
+            errors.append(f"{provider}: {e}")
+            raw = None
 
     if raw:
         try:
@@ -244,18 +274,17 @@ Respond ONLY with this exact JSON structure (no markdown, no preamble, no extra 
             data = json.loads(raw)
             data['long_tail_keywords'] = keywords
             data['primary_keyword'] = primary_kw
-            data['ai_provider'] = used_provider
+            data['ai_provider'] = used_provider or 'unknown'
             return data
         except Exception as e:
             print(f"JSON parse error: {e}")
+            raise RuntimeError('AI returned invalid JSON response. Please try a different provider or key.')
 
-    # ---------------------------------------------------------------
-    # FALLBACK — also fully unique per city
-    # ---------------------------------------------------------------
+    raise RuntimeError('AI generation failed for all saved providers: ' + '; '.join(errors))
     return {
         "meta_title": f"Commercial Dumpster Rental {city}, {state_abbr} {zip_code} | Pro Dumpster Rental",
         "meta_description": f"Roll-off dumpster rental for contractors in {city}, {state_abbr} {zip_code}. 10-40 yard containers. Call (619) 759-6533. Mon-Fri 8AM-8PM EST.",
-        "h1": f"Commercial Dumpster Rental in {city}, {state_abbr} — Roll-Off Containers for Contractors",
+        "h1": f"Commercial Dumpster Rental {city}, {state_abbr}",
         "hero_subtitle": f"Reliable roll-off container delivery for construction and commercial projects throughout {county}.",
         "intro_paragraph": f"Pro Dumpster Rental serves construction companies and commercial property managers across {city}, {state_abbr} {zip_code} with dependable roll-off dumpster delivery. Whether you are managing a large-scale commercial renovation, a demolition project, or an ongoing construction site in {county}, our team keeps your waste removal on schedule. We exclusively serve B2B clients — contractors, general contractors, and commercial facilities managers — ensuring dedicated service for professional job sites. Call (619) 759-6533 to schedule delivery to your {city} worksite.",
         "why_us_points": [
@@ -284,10 +313,23 @@ def generate_html_page(city, state, state_abbr, zip_code, county, content, blogs
     kw_str = ", ".join(content['long_tail_keywords'][:12])
     county_short = county.replace(" County", "").replace(" Parish", "")
 
-    # Clean meta_title to max 60 chars
+    # ── Auto-sanitize all SEO fields ──────────────────────────────
+    # Title: hard cap 60 chars
     meta_title = content['meta_title']
     if len(meta_title) > 60:
-        meta_title = f"Commercial Dumpster Rental {city}, {state_abbr} | Pro Dumpster"
+        meta_title = f"Commercial Dumpster Rental {city}, {state_abbr}"
+
+    # H1: hard cap 65 chars
+    h1_raw = content['h1']
+    if len(h1_raw) > 65:
+        h1_raw = f"Commercial Dumpster Rental {city}, {state_abbr}"
+
+    # Meta description: hard cap 155 chars, pad if too short
+    meta_desc = content['meta_description']
+    if len(meta_desc) > 155:
+        meta_desc = meta_desc[:152] + '...'
+    if len(meta_desc) < 130:
+        meta_desc = f"Commercial dumpster rental in {city}, {state_abbr} {zip_code}. Roll-off containers for contractors. Call (619) 759-6533 Mon-Fri 8AM-8PM EST."
 
     schema = {
         "@context": "https://schema.org", "@type": "HomeAndConstructionBusiness",
@@ -306,7 +348,7 @@ def generate_html_page(city, state, state_abbr, zip_code, county, content, blogs
     icons = ["⚡","📦","🏗️","💰"]
     why_html = "".join([f'<div class="why-card"><div class="why-icon" aria-hidden="true">{icons[i%4]}</div><h3>{p["title"]}</h3><p>{p["desc"]}</p></div>' for i,p in enumerate(content['why_us_points'])])
     faq_html = "".join([f'<div class="faq-item" itemscope itemprop="mainEntity" itemtype="https://schema.org/Question"><div class="faq-q" onclick="toggleFaq(this)" role="button" aria-expanded="false"><span itemprop="name">{f["q"]}</span><div class="faq-arrow" aria-hidden="true">+</div></div><div class="faq-a" itemscope itemprop="acceptedAnswer" itemtype="https://schema.org/Answer"><div class="faq-a-inner" itemprop="text">{f["a"]}</div></div></div>' for f in content['faq']])
-    h1_display = content['h1'].replace(city, f'<span>{city}</span>', 1)
+    h1_display = h1_raw.replace(city, f'<span>{city}</span>', 1)
     year = datetime.now().year
 
     # OG image — use a placeholder that works (can be swapped for a real image URL)
@@ -319,7 +361,7 @@ def generate_html_page(city, state, state_abbr, zip_code, county, content, blogs
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <title>{meta_title}</title>
-<meta name="description" content="{content['meta_description']}">
+<meta name="description" content="{meta_desc}">
 <meta name="keywords" content="{kw_str}">
 <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
 <meta name="geo.region" content="US-{state_abbr}">
@@ -702,16 +744,33 @@ def api_generate():
     c = conn.cursor()
     c.execute('SELECT filename FROM generated_pages WHERE filename=?', (filename,))
     existing = c.fetchone(); conn.close()
-    if existing and os.path.exists(os.path.join(OUTPUT_DIR, filename)):
-        return jsonify({'success': True, 'filename': filename, 'cached': True, 'blogspot_url': blogspot_url, 'message': 'Page already exists'})
-    content = generate_seo_content(city, state, state_abbr, zip_code, county)
+    provider, api_key = get_active_provider()
+    if existing and os.path.exists(os.path.join(OUTPUT_DIR, filename)) and not provider:
+        token = get_or_create_token(filename)
+        generated = session.get('generated_pages', [])
+        if filename not in generated:
+            generated.append(filename)
+            session['generated_pages'] = generated
+        return jsonify({'success': True, 'filename': filename, 'cached': True, 'blogspot_url': blogspot_url,
+                        'preview_url': f'/preview/{filename}?token={token}',
+                        'message': 'Page already exists'})
+    try:
+        content = generate_seo_content(city, state, state_abbr, zip_code, county)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
     html = generate_html_page(city, state, state_abbr, zip_code, county, content, blogspot_url)
     with open(os.path.join(OUTPUT_DIR, filename), 'w', encoding='utf-8') as f:
         f.write(html)
     save_page_to_db(city, state, state_abbr, zip_code, county, filename, blogspot_url, content)
+    generated = session.get('generated_pages', [])
+    if filename not in generated:
+        generated.append(filename)
+        session['generated_pages'] = generated
     with open(os.path.join(OUTPUT_DIR, 'sitemap.xml'), 'w') as f:
         f.write(generate_sitemap())
+    token = get_or_create_token(filename)
     return jsonify({'success': True, 'filename': filename, 'cached': False, 'blogspot_url': blogspot_url,
+                    'preview_url': f'/preview/{filename}?token={token}',
                     'meta_title': content['meta_title'], 'primary_keyword': content['primary_keyword'],
                     'long_tail_keywords': content['long_tail_keywords'][:6],
                     'ai_provider': content.get('ai_provider','fallback'),
@@ -719,7 +778,17 @@ def api_generate():
 
 @app.route('/preview/<filename>')
 def preview_page(filename):
+    token = request.args.get('token', '')
+    if not token or not verify_token(filename, token):
+        return "Access denied. Invalid or missing token.", 403
     return send_from_directory(OUTPUT_DIR, filename)
+
+@app.route('/download/<filename>')
+def download_page(filename):
+    token = request.args.get('token', '')
+    if not token or not verify_token(filename, token):
+        return "Access denied. Invalid or missing token.", 403
+    return send_from_directory(OUTPUT_DIR, filename, as_attachment=True)
 
 @app.route('/sitemap.xml')
 def sitemap():

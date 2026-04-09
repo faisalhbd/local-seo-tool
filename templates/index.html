@@ -242,7 +242,7 @@
               Get free key: <a href="{{ prov.signup }}" target="_blank">{{ prov.signup }}</a>
               {% if provider_id == 'groq' %} — Fastest free AI (LLaMA 3){% endif %}
               {% if provider_id == 'together' %} — $25 free credit on signup{% endif %}
-              {% if provider_id == 'openrouter' %} — Free tier with many models{% endif %}
+              {% if provider_id == 'openrouter' %} — Free tier with many models. Try openai/gpt-oss-120b:free or nvidia/nemotron-3-super-120b-a12b:free.{% endif %}
               {% if provider_id == 'anthropic' %} — Best quality, paid per token{% endif %}
             </div>
             <div class="key-msg" id="msg-{{ provider_id }}" style="display:none;"></div>
@@ -344,6 +344,7 @@
       <div class="kw-tags" id="kw-tags"></div>
       <div class="result-actions">
         <a href="#" class="btn-preview" id="preview-btn" target="_blank">👁 Preview Page</a>
+        <a href="#" class="btn-preview" id="download-btn" target="_blank" download>📥 Download HTML</a>
         <button class="btn-copy" onclick="copyFilename()">📋 Copy Filename</button>
       </div>
     </div>
@@ -410,6 +411,7 @@ function saveKey(provider) {
   if (!key) { showMsg(provider, 'Please enter a key', 'err'); return; }
   fetch('/api/save-key', {
     method: 'POST',
+    credentials: 'same-origin',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({provider, key})
   }).then(r => r.json()).then(d => {
@@ -431,6 +433,7 @@ function testKey(provider) {
   showMsg(provider, '⏳ Testing...', 'ok');
   fetch('/api/test-key', {
     method: 'POST',
+    credentials: 'same-origin',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({provider, key})
   }).then(r => r.json()).then(d => {
@@ -453,7 +456,7 @@ function loadCities(state) {
   document.getElementById('kw-preview').classList.remove('active');
   document.getElementById('city-selector').classList.remove('active');
   if (!state) return;
-  fetch('/api/cities/' + encodeURIComponent(state))
+  fetch('/api/cities/' + encodeURIComponent(state), {credentials: 'same-origin'})
     .then(r => r.json())
     .then(data => {
       const grid = document.getElementById('city-grid');
@@ -504,6 +507,7 @@ function generatePage() {
 
   fetch('/api/generate', {
     method: 'POST',
+    credentials: 'same-origin',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({state: selectedState, city_data: selectedCity})
   }).then(r => r.json()).then(data => {
@@ -542,6 +546,7 @@ function showResult(data) {
   document.getElementById('result-chip').textContent = data.cached ? '📦 Cached' : '✅ Generated';
   document.getElementById('result-chip').className = 'chip ' + (data.cached ? 'chip-orange' : 'chip-green');
   document.getElementById('preview-btn').href = '/preview/' + data.filename;
+  document.getElementById('download-btn').href = '/download/' + data.filename;
   document.getElementById('blogspot-url-display').textContent = data.blogspot_url || '—';
   document.getElementById('seo-grid').innerHTML =
     '<div class="seo-item"><div class="seo-item-label">Primary Keyword</div><div class="seo-item-val">' + (data.primary_keyword || '—') + '</div></div>' +
@@ -558,7 +563,7 @@ function copyBlogspotUrl() {
 }
 
 function loadAllPages() {
-  fetch('/api/pages').then(r => r.json()).then(pages => {
+  fetch('/api/pages', {credentials: 'same-origin'}).then(r => r.json()).then(pages => {
     document.getElementById('pages-badge').textContent = pages.length + ' pages';
     let tbody = document.getElementById('pages-tbody');
     if (!tbody) {
