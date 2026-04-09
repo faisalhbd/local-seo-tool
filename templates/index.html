@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Local SEO Page Generator — Dumpster Rental</title>
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    :root{
+      --black:#111010;--dark:#1c1c1c;--steel:#2b2b2b;
+      --orange:#e8520a;--orange-light:rgba(232,82,10,0.12);
+      --yellow:#f5a623;--white:#fff;
+      --gray-100:#f5f3ef;--gray-200:#edebe7;--gray-500:#888070;
+      --green:#2d7d46;--green-bg:rgba(45,125,70,0.12);
+      --blue:#1a3a5c;--border:#e2e8f0;--radius:6px;
+    }
+    body{font-family:'Barlow',system-ui,sans-serif;background:#f0ede8;color:var(--dark);min-height:100vh;}
+    h1,h2,h3,h4{font-family:'Oswald',sans-serif;text-transform:uppercase;letter-spacing:0.03em;}
+
+    /* HEADER */
+    header{background:var(--black);border-bottom:3px solid var(--orange);padding:0 28px;display:flex;align-items:center;justify-content:space-between;height:58px;position:sticky;top:0;z-index:100;box-shadow:0 4px 20px rgba(0,0,0,0.4);}
+    .logo{display:flex;align-items:center;gap:10px;color:white;}
+    .logo-icon{width:34px;height:34px;background:var(--orange);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:18px;}
+    .logo-text{font-family:'Oswald',sans-serif;font-size:18px;font-weight:700;color:white;text-transform:uppercase;letter-spacing:0.04em;}
+    .logo-text span{color:var(--orange);}
+    .header-right{display:flex;align-items:center;gap:16px;}
+    .hdr-badge{background:var(--orange-light);border:1px solid rgba(232,82,10,0.35);color:var(--orange);font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;text-transform:uppercase;letter-spacing:0.05em;}
+    .hdr-stat{color:rgba(255,255,255,0.45);font-size:12px;}
+    .hdr-stat strong{color:white;}
+    .hdr-link{color:rgba(255,255,255,0.4);font-size:12px;text-decoration:none;transition:color 0.2s;}
+    .hdr-link:hover{color:var(--orange);}
+
+    /* LAYOUT */
+    .layout{display:grid;grid-template-columns:370px 1fr;min-height:calc(100vh - 58px);}
+
+    /* LEFT PANEL */
+    .panel-left{background:white;border-right:1px solid var(--border);padding:24px 20px;overflow-y:auto;max-height:calc(100vh - 58px);position:sticky;top:58px;}
+    .panel-section{margin-bottom:24px;}
+    .panel-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--gray-500);margin-bottom:14px;display:flex;align-items:center;gap:6px;}
+    .panel-label::after{content:'';flex:1;height:1px;background:var(--border);}
+
+    /* FORM */
+    .form-group{margin-bottom:14px;}
+    label{display:block;font-size:12px;font-weight:600;color:var(--dark);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em;}
+    select,input[type=text],input[type=password]{width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:var(--radius);font-size:13px;color:var(--dark);background:white;outline:none;transition:border-color 0.15s;appearance:none;-webkit-appearance:none;font-family:'Barlow',sans-serif;}
+    select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888070' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:36px;cursor:pointer;}
+    select:focus,input:focus{border-color:var(--orange);box-shadow:0 0 0 3px var(--orange-light);}
+    select:disabled{background:var(--gray-100);color:var(--gray-500);cursor:not-allowed;}
+
+    /* CITY GRID */
+    .city-selector{display:none;}
+    .city-selector.active{display:block;}
+    .city-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;max-height:240px;overflow-y:auto;padding:2px;}
+    .city-card{border:1.5px solid var(--border);border-radius:var(--radius);padding:9px 11px;cursor:pointer;transition:all 0.15s;background:white;}
+    .city-card:hover{border-color:var(--orange);background:var(--orange-light);}
+    .city-card.selected{border-color:var(--orange);background:var(--orange-light);box-shadow:0 0 0 3px rgba(232,82,10,0.12);}
+    .city-name{font-size:13px;font-weight:600;color:var(--dark);}
+    .city-meta{font-size:11px;color:var(--gray-500);margin-top:2px;}
+
+    /* KW PREVIEW */
+    .kw-preview{display:none;margin-top:14px;}
+    .kw-preview.active{display:block;}
+    .kw-box{background:#fff8f0;border:1px solid rgba(232,82,10,0.2);border-radius:var(--radius);padding:12px;}
+    .kw-box-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--orange);margin-bottom:8px;}
+    .kw-list{list-style:none;}
+    .kw-list li{font-size:12px;color:#7a4500;padding:3px 0;border-bottom:1px solid rgba(232,82,10,0.1);display:flex;align-items:center;gap:6px;}
+    .kw-list li:last-child{border:none;}
+    .kw-dot{width:4px;height:4px;border-radius:50%;background:var(--orange);flex-shrink:0;}
+
+    /* AI KEY SECTION */
+    .ai-provider-grid{display:flex;flex-direction:column;gap:8px;}
+    .ai-provider-row{border:1.5px solid var(--border);border-radius:var(--radius);overflow:hidden;}
+    .ai-provider-row.has-key{border-color:rgba(45,125,70,0.4);}
+    .ai-provider-row.active-provider{border-color:var(--orange);box-shadow:0 0 0 2px var(--orange-light);}
+    .ai-provider-header{padding:10px 12px;display:flex;align-items:center;justify-content:space-between;background:var(--gray-100);cursor:pointer;user-select:none;}
+    .ai-provider-header:hover{background:var(--gray-200);}
+    .ai-prov-name{font-size:12px;font-weight:700;color:var(--dark);display:flex;align-items:center;gap:6px;}
+    .ai-prov-badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;text-transform:uppercase;letter-spacing:0.05em;}
+    .badge-free{background:var(--green-bg);color:var(--green);}
+    .badge-paid{background:var(--orange-light);color:var(--orange);}
+    .badge-active{background:var(--orange);color:white;}
+    .ai-key-status{font-size:10px;color:var(--gray-500);}
+    .ai-key-status.saved{color:var(--green);font-weight:600;}
+    .ai-provider-body{display:none;padding:12px;background:white;border-top:1px solid var(--border);}
+    .ai-provider-body.open{display:block;}
+    .ai-key-input-row{display:flex;gap:6px;}
+    .ai-key-input-row input{flex:1;font-size:12px;padding:8px 10px;}
+    .btn-xs{padding:8px 12px;border:none;border-radius:var(--radius);font-size:11px;font-weight:700;cursor:pointer;transition:all 0.15s;white-space:nowrap;text-transform:uppercase;letter-spacing:0.04em;}
+    .btn-save{background:var(--orange);color:white;}
+    .btn-save:hover{background:#c44207;}
+    .btn-test{background:var(--gray-100);color:var(--dark);}
+    .btn-test:hover{background:var(--gray-200);}
+    .key-note{font-size:11px;color:var(--gray-500);margin-top:6px;line-height:1.4;}
+    .key-note a{color:var(--orange);}
+    .key-msg{font-size:11px;font-weight:600;margin-top:6px;padding:5px 8px;border-radius:4px;}
+    .key-msg.ok{background:var(--green-bg);color:var(--green);}
+    .key-msg.err{background:rgba(192,57,43,0.1);color:#c0392b;}
+
+    /* BUTTONS */
+    .btn-generate{width:100%;padding:13px;background:var(--orange);color:white;border:none;border-radius:var(--radius);font-family:'Oswald',sans-serif;font-size:16px;font-weight:700;cursor:pointer;transition:all 0.2s;margin-top:18px;display:flex;align-items:center;justify-content:center;gap:8px;text-transform:uppercase;letter-spacing:0.05em;}
+    .btn-generate:hover:not(:disabled){background:#c44207;transform:translateY(-1px);}
+    .btn-generate:disabled{opacity:0.5;cursor:not-allowed;transform:none;}
+    .btn-secondary{width:100%;padding:9px;background:transparent;color:var(--orange);border:1.5px solid var(--border);border-radius:var(--radius);font-size:12px;font-weight:600;cursor:pointer;transition:all 0.15s;margin-top:6px;text-transform:uppercase;letter-spacing:0.04em;}
+    .btn-secondary:hover{border-color:var(--orange);background:var(--orange-light);}
+
+    /* BIZ INFO */
+    .biz-info{background:var(--gray-100);border-radius:var(--radius);padding:12px;}
+    .biz-row{display:flex;gap:8px;font-size:12px;margin-bottom:6px;}
+    .biz-row:last-child{margin:0;}
+    .biz-key{color:var(--gray-500);min-width:54px;font-weight:600;text-transform:uppercase;font-size:10px;letter-spacing:0.06em;padding-top:1px;}
+    .biz-val{font-weight:600;color:var(--dark);}
+    .biz-val.orange{color:var(--orange);}
+    .divider{height:1px;background:var(--border);margin:20px 0;}
+
+    /* RIGHT PANEL */
+    .panel-right{padding:24px 28px;}
+
+    /* STATUS BAR */
+    .status-bar{background:white;border:1.5px solid var(--border);border-left:4px solid var(--orange);border-radius:var(--radius);padding:14px 18px;display:flex;align-items:center;gap:14px;margin-bottom:20px;}
+    .status-icon{font-size:22px;flex-shrink:0;}
+    .status-text{flex:1;}
+    .status-title{font-size:13px;font-weight:700;color:var(--dark);}
+    .status-sub{font-size:12px;color:var(--gray-500);margin-top:2px;}
+    .progress-bar{height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:8px;}
+    .progress-fill{height:100%;background:var(--orange);border-radius:2px;width:0%;transition:width 0.4s ease;}
+    .progress-fill.animated{animation:progressAnim 2s infinite;}
+    @keyframes progressAnim{0%{width:10%;}50%{width:85%;}100%{width:10%;}}
+
+    /* RESULT CARD */
+    .result-card{background:white;border:1.5px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:20px;display:none;}
+    .result-card.active{display:block;}
+    .result-card.success{border-color:rgba(45,125,70,0.35);border-top:3px solid var(--green);}
+    .result-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px;}
+    .result-title{font-family:'Oswald',sans-serif;font-size:15px;font-weight:700;color:var(--dark);text-transform:uppercase;letter-spacing:0.03em;}
+    .result-meta{font-size:11px;color:var(--gray-500);margin-top:3px;}
+    .chip{padding:3px 10px;border-radius:20px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;}
+    .chip-green{background:var(--green-bg);color:var(--green);}
+    .chip-orange{background:var(--orange-light);color:var(--orange);}
+    .seo-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;}
+    .seo-item{background:var(--gray-100);border-radius:var(--radius);padding:10px 12px;}
+    .seo-item-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--gray-500);margin-bottom:4px;}
+    .seo-item-val{font-size:12px;color:var(--dark);line-height:1.4;word-break:break-word;}
+    .kw-tags{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:14px;}
+    .kw-tag{background:#fff8f0;color:#7a4500;font-size:11px;padding:3px 9px;border-radius:20px;border:1px solid rgba(232,82,10,0.2);}
+    .blogspot-box{background:var(--dark);border-radius:var(--radius);padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:10px;}
+    .blogspot-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:rgba(255,255,255,0.4);margin-bottom:3px;}
+    .blogspot-url{font-size:12px;color:var(--orange);font-weight:600;word-break:break-all;}
+    .result-actions{display:flex;gap:8px;flex-wrap:wrap;}
+    .btn-preview{padding:8px 16px;background:var(--orange);color:white;border:none;border-radius:var(--radius);font-size:12px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;transition:background 0.15s;text-transform:uppercase;font-family:'Oswald',sans-serif;letter-spacing:0.05em;}
+    .btn-preview:hover{background:#c44207;}
+    .btn-copy{padding:8px 14px;background:transparent;color:var(--dark);border:1.5px solid var(--border);border-radius:var(--radius);font-size:12px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px;transition:all 0.15s;text-transform:uppercase;letter-spacing:0.04em;}
+    .btn-copy:hover{border-color:var(--orange);color:var(--orange);}
+
+    /* PAGES TABLE */
+    .pages-section{margin-top:20px;}
+    .pages-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+    .pages-title{font-family:'Oswald',sans-serif;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--dark);}
+    .pages-badge{background:var(--orange);color:white;font-size:10px;font-weight:700;padding:2px 9px;border-radius:20px;text-transform:uppercase;}
+    .pages-table{width:100%;border-collapse:collapse;font-size:12px;background:white;border-radius:var(--radius);overflow:hidden;border:1.5px solid var(--border);}
+    .pages-table th{text-align:left;padding:10px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--gray-500);border-bottom:1px solid var(--border);background:var(--gray-100);}
+    .pages-table td{padding:9px 12px;border-bottom:1px solid var(--border);color:var(--dark);vertical-align:middle;}
+    .pages-table tr:last-child td{border:none;}
+    .pages-table tr:hover td{background:#fdf9f6;}
+    .table-city{font-weight:700;font-family:'Oswald',sans-serif;font-size:13px;letter-spacing:0.03em;}
+    .table-kw{color:var(--gray-500);font-size:11px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .table-prov{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;padding:2px 7px;border-radius:10px;background:var(--gray-200);color:var(--gray-700);}
+    .table-prov.groq{background:rgba(45,125,70,0.1);color:var(--green);}
+    .table-prov.together{background:#e8f4ff;color:#1a5c9a;}
+    .table-prov.openrouter{background:#f0ebff;color:#5b21b6;}
+    .table-prov.anthropic{background:var(--orange-light);color:var(--orange);}
+    .table-link{color:var(--orange);text-decoration:none;font-size:11px;font-weight:700;text-transform:uppercase;display:flex;align-items:center;gap:3px;}
+    .table-link:hover{text-decoration:underline;}
+    .empty-state{text-align:center;padding:40px 24px;color:var(--gray-500);background:white;border:1.5px solid var(--border);border-radius:var(--radius);}
+    .empty-icon{font-size:36px;margin-bottom:10px;}
+    .empty-title{font-family:'Oswald',sans-serif;font-size:16px;font-weight:700;text-transform:uppercase;color:var(--dark);margin-bottom:5px;}
+    .empty-sub{font-size:13px;}
+
+    /* SPINNER */
+    .spinner{width:18px;height:18px;border:2.5px solid rgba(255,255,255,0.3);border-top-color:white;border-radius:50%;animation:spin 0.7s linear infinite;}
+    @keyframes spin{to{transform:rotate(360deg);}}
+
+    /* NOTIFICATION */
+    .notification{position:fixed;bottom:24px;right:24px;background:var(--dark);color:white;padding:12px 18px;border-radius:var(--radius);font-size:13px;font-weight:600;box-shadow:0 8px 32px rgba(0,0,0,0.25);z-index:1000;display:none;align-items:center;gap:8px;max-width:300px;border-left:4px solid var(--orange);}
+    .notification.show{display:flex;}
+    .notification.success{border-left-color:var(--green);}
+    .notification.error{border-left-color:#c0392b;}
+
+    @media(max-width:900px){.layout{grid-template-columns:1fr;}.panel-left{position:relative;top:0;max-height:none;}.panel-right{padding:20px;}}
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">🗑️</div>
+    <div class="logo-text">SEO <span>Page</span> Generator</div>
+  </div>
+  <div class="header-right">
+    <span class="hdr-badge">Dumpster Rental</span>
+    <span class="hdr-stat">Pages: <strong id="total-count">{{ total_pages }}</strong></span>
+    <a href="/sitemap.xml" target="_blank" class="hdr-link">Sitemap ↗</a>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- LEFT PANEL -->
+  <aside class="panel-left">
+
+    <!-- AI KEY MANAGER -->
+    <div class="panel-section">
+      <div class="panel-label">🤖 AI Provider & API Keys</div>
+      <div class="ai-provider-grid">
+        {% for provider_id, prov in ai_providers.items() %}
+        <div class="ai-provider-row {% if provider_id in existing_keys %}has-key{% endif %}" id="prov-row-{{ provider_id }}">
+          <div class="ai-provider-header" onclick="toggleProvider('{{ provider_id }}')">
+            <div class="ai-prov-name">
+              {% if provider_id == 'groq' %}🟢{% elif provider_id == 'together' %}🔵{% elif provider_id == 'openrouter' %}🟣{% else %}🟠{% endif %}
+              {{ prov.name }}
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;">
+              {% if prov.free %}
+              <span class="ai-prov-badge badge-free">Free</span>
+              {% else %}
+              <span class="ai-prov-badge badge-paid">Paid</span>
+              {% endif %}
+              {% if provider_id in existing_keys %}
+              <span class="ai-key-status saved" id="status-{{ provider_id }}">✓ Saved</span>
+              {% else %}
+              <span class="ai-key-status" id="status-{{ provider_id }}">No key</span>
+              {% endif %}
+            </div>
+          </div>
+          <div class="ai-provider-body" id="body-{{ provider_id }}">
+            <div class="ai-key-input-row">
+              <input type="password" id="key-{{ provider_id }}" placeholder="Paste your API key here..." autocomplete="off">
+              <button class="btn-xs btn-save" onclick="saveKey('{{ provider_id }}')">Save</button>
+              <button class="btn-xs btn-test" onclick="testKey('{{ provider_id }}')">Test</button>
+            </div>
+            <div class="key-note">
+              Get free key: <a href="{{ prov.signup }}" target="_blank">{{ prov.signup }}</a>
+              {% if provider_id == 'groq' %} — Fastest free AI (LLaMA 3){% endif %}
+              {% if provider_id == 'together' %} — $25 free credit on signup{% endif %}
+              {% if provider_id == 'openrouter' %} — Free tier with many models{% endif %}
+              {% if provider_id == 'anthropic' %} — Best quality, paid per token{% endif %}
+            </div>
+            <div class="key-msg" id="msg-{{ provider_id }}" style="display:none;"></div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      <div style="font-size:11px;color:var(--gray-500);margin-top:8px;">Priority: Groq → Together → OpenRouter → Anthropic. First saved key will be used.</div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- LOCATION -->
+    <div class="panel-section">
+      <div class="panel-label">📍 Select Location</div>
+      <div class="form-group">
+        <label for="state-select">State</label>
+        <select id="state-select" onchange="loadCities(this.value)">
+          <option value="">— Choose a State —</option>
+          {% for state_name in locations.keys()|sort %}
+          <option value="{{ state_name }}">{{ state_name }} ({{ locations[state_name].abbreviation }})</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="city-selector" id="city-selector">
+        <label>City / Town</label>
+        <div class="city-grid" id="city-grid"></div>
+      </div>
+
+      <div class="kw-preview" id="kw-preview">
+        <div class="kw-box">
+          <div class="kw-box-label">🎯 Long-Tail Keywords Preview</div>
+          <ul class="kw-list" id="kw-list"></ul>
+        </div>
+      </div>
+    </div>
+
+    <button class="btn-generate" id="generate-btn" onclick="generatePage()" disabled>
+      <span id="btn-text">⚡ Generate SEO Page</span>
+    </button>
+    <button class="btn-secondary" onclick="loadAllPages()">📋 Refresh Pages List</button>
+
+    <div class="divider"></div>
+
+    <!-- BIZ INFO -->
+    <div class="panel-section">
+      <div class="panel-label">📞 Business Config</div>
+      <div class="biz-info">
+        <div class="biz-row"><span class="biz-key">Phone</span><span class="biz-val orange">{{ business.phone_display }}</span></div>
+        <div class="biz-row"><span class="biz-key">Offer</span><span class="biz-val">{{ business.offer }}</span></div>
+        <div class="biz-row"><span class="biz-key">Hours</span><span class="biz-val">{{ business.hours }}</span></div>
+        <div class="biz-row"><span class="biz-key">Target</span><span class="biz-val">B2B Only — No Homeowners</span></div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- SEO CHECKLIST -->
+    <div class="panel-section">
+      <div class="panel-label">✅ Auto-Included SEO Features</div>
+      <div style="font-size:11px;color:var(--gray-500);">
+        {% for f in ["Title Tag (60 char)","Meta Description (155 char)","Schema: LocalBusiness","Schema: FAQPage","Schema: BreadcrumbList","Open Graph Tags","Twitter Card","Canonical (Blogspot URL)","Geo Meta Tags","H1→H2→H3 Hierarchy","FAQ Section (4 Qs)","Responsive CSS","ARIA Accessibility","Skip Navigation","Sitemap XML Auto-update","20 Long-Tail Keywords","Alt Tags on Icons","Phone CTA x5","Mobile-First CSS","Print Stylesheet"] %}
+        <div style="padding:3px 0;display:flex;align-items:center;gap:5px;border-bottom:1px solid #f1f5f9;">
+          <span style="color:var(--green);font-size:11px;">✓</span> {{ f }}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- RIGHT PANEL -->
+  <main class="panel-right">
+
+    <div class="status-bar" id="status-bar">
+      <div class="status-icon">🚀</div>
+      <div class="status-text">
+        <div class="status-title" id="status-title">Select a state and city to get started</div>
+        <div class="status-sub" id="status-sub">AI generates unique, dark-design SEO pages with Blogspot URL structure</div>
+        <div class="progress-bar" id="progress-bar" style="display:none;"><div class="progress-fill" id="progress-fill"></div></div>
+      </div>
+    </div>
+
+    <!-- RESULT -->
+    <div class="result-card" id="result-card">
+      <div class="result-header">
+        <div>
+          <div class="result-title" id="result-title">Page Generated</div>
+          <div class="result-meta" id="result-meta"></div>
+        </div>
+        <span class="chip chip-green" id="result-chip">✓ Success</span>
+      </div>
+      <div class="blogspot-box" id="blogspot-box">
+        <div><div class="blogspot-label">Blogspot URL (Canonical)</div><div class="blogspot-url" id="blogspot-url-display">—</div></div>
+        <button class="btn-xs btn-test" onclick="copyBlogspotUrl()" style="flex-shrink:0;">Copy URL</button>
+      </div>
+      <div class="seo-grid" id="seo-grid"></div>
+      <div class="kw-tags" id="kw-tags"></div>
+      <div class="result-actions">
+        <a href="#" class="btn-preview" id="preview-btn" target="_blank">👁 Preview Page</a>
+        <button class="btn-copy" onclick="copyFilename()">📋 Copy Filename</button>
+      </div>
+    </div>
+
+    <!-- PAGES TABLE -->
+    <div class="pages-section">
+      <div class="pages-header">
+        <span class="pages-title">Generated Pages</span>
+        <span class="pages-badge" id="pages-badge">{{ total_pages }} pages</span>
+      </div>
+
+      {% if recent_pages %}
+      <table class="pages-table" id="pages-table">
+        <thead>
+          <tr>
+            <th>City / State</th>
+            <th>Primary Keyword</th>
+            <th>ZIP</th>
+            <th>AI Used</th>
+            <th>Blogspot URL</th>
+            <th>Preview</th>
+          </tr>
+        </thead>
+        <tbody id="pages-tbody">
+          {% for page in recent_pages %}
+          <tr>
+            <td><div class="table-city">{{ page[1] }}, {{ page[0] }}</div></td>
+            <td><div class="table-kw" title="{{ page[3] or '' }}">{{ (page[3] or '—')[:40] }}</div></td>
+            <td>{{ page[2] }}</td>
+            <td><span class="table-prov {{ page[5] or 'fallback' }}">{{ page[5] or 'fallback' }}</span></td>
+            <td style="font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+              {% if page[6] %}<a href="{{ page[6] }}" target="_blank" style="color:var(--orange);font-size:11px;">{{ page[6]|replace('https://','') }}</a>{% else %}—{% endif %}
+            </td>
+            <td><a href="/preview/{{ page[4] }}" target="_blank" class="table-link">View ↗</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty-state">
+        <div class="empty-icon">📄</div>
+        <div class="empty-title">No Pages Yet</div>
+        <div class="empty-sub">Select state → city → Generate SEO Page</div>
+      </div>
+      {% endif %}
+    </div>
+
+  </main>
+</div>
+
+<div class="notification" id="notification"><span id="notif-text"></span></div>
+
+<script>
+let selectedCity = null, selectedState = null, currentFilename = null, currentBlogspotUrl = null;
+
+// AI KEY MANAGEMENT
+function toggleProvider(id) {
+  const body = document.getElementById('body-' + id);
+  body.classList.toggle('open');
+}
+
+function saveKey(provider) {
+  const key = document.getElementById('key-' + provider).value.trim();
+  if (!key) { showMsg(provider, 'Please enter a key', 'err'); return; }
+  fetch('/api/save-key', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({provider, key})
+  }).then(r => r.json()).then(d => {
+    if (d.success) {
+      showMsg(provider, '✅ ' + d.message, 'ok');
+      document.getElementById('status-' + provider).textContent = '✓ Saved';
+      document.getElementById('status-' + provider).className = 'ai-key-status saved';
+      document.getElementById('prov-row-' + provider).classList.add('has-key');
+      document.getElementById('key-' + provider).value = '';
+    } else {
+      showMsg(provider, '❌ ' + d.error, 'err');
+    }
+  });
+}
+
+function testKey(provider) {
+  const key = document.getElementById('key-' + provider).value.trim();
+  if (!key) { showMsg(provider, 'Enter a key first', 'err'); return; }
+  showMsg(provider, '⏳ Testing...', 'ok');
+  fetch('/api/test-key', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({provider, key})
+  }).then(r => r.json()).then(d => {
+    showMsg(provider, d.success ? '✅ ' + d.message : '❌ ' + d.message, d.success ? 'ok' : 'err');
+  });
+}
+
+function showMsg(provider, msg, type) {
+  const el = document.getElementById('msg-' + provider);
+  el.textContent = msg;
+  el.className = 'key-msg ' + type;
+  el.style.display = 'block';
+  setTimeout(() => { el.style.display = 'none'; }, 5000);
+}
+
+// LOCATION
+function loadCities(state) {
+  selectedState = state; selectedCity = null;
+  document.getElementById('generate-btn').disabled = true;
+  document.getElementById('kw-preview').classList.remove('active');
+  document.getElementById('city-selector').classList.remove('active');
+  if (!state) return;
+  fetch('/api/cities/' + encodeURIComponent(state))
+    .then(r => r.json())
+    .then(data => {
+      const grid = document.getElementById('city-grid');
+      grid.innerHTML = '';
+      data.cities.forEach(city => {
+        const c = document.createElement('div');
+        c.className = 'city-card';
+        c.innerHTML = '<div class="city-name">' + city.name + '</div><div class="city-meta">' + city.zip + ' · ' + city.county + '</div>';
+        c.onclick = () => selectCity(city, data.abbreviation, c);
+        grid.appendChild(c);
+      });
+      document.getElementById('city-selector').classList.add('active');
+    });
+}
+
+function selectCity(city, stateAbbr, el) {
+  document.querySelectorAll('.city-card').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+  selectedCity = city;
+  const kws = [
+    'commercial dumpster rental ' + city.name + ' ' + stateAbbr,
+    'construction dumpster rental ' + city.name + ' ' + stateAbbr + ' ' + city.zip,
+    'roll off dumpster rental ' + city.name + ' ' + stateAbbr,
+    'affordable construction waste removal ' + city.name,
+    'best dumpster rental ' + city.name + ' ' + city.zip,
+    'same day dumpster delivery ' + city.name + ' ' + city.zip,
+  ];
+  document.getElementById('kw-list').innerHTML = kws.map(k => '<li><span class="kw-dot"></span>' + k + '</li>').join('');
+  document.getElementById('kw-preview').classList.add('active');
+  document.getElementById('generate-btn').disabled = false;
+  document.getElementById('status-title').textContent = city.name + ', ' + stateAbbr + ' ' + city.zip + ' selected';
+  document.getElementById('status-sub').textContent = 'Blogspot URL will be: dumpster' + city.name.replace(/\s/g,'') + stateAbbr + city.zip + '.blogspot.com';
+}
+
+// GENERATE
+function generatePage() {
+  if (!selectedState || !selectedCity) return;
+  const btn = document.getElementById('generate-btn');
+  btn.disabled = true;
+  document.getElementById('btn-text').innerHTML = '<div class="spinner"></div> Generating...';
+  const pb = document.getElementById('progress-bar');
+  const pf = document.getElementById('progress-fill');
+  pb.style.display = 'block';
+  pf.classList.add('animated');
+  document.getElementById('status-title').textContent = 'Generating AI content for ' + selectedCity.name + '...';
+  document.getElementById('status-sub').textContent = 'AI is writing unique SEO content with local keywords';
+  document.getElementById('result-card').classList.remove('active');
+
+  fetch('/api/generate', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({state: selectedState, city_data: selectedCity})
+  }).then(r => r.json()).then(data => {
+    pf.classList.remove('animated');
+    pf.style.width = '100%';
+    if (data.success) {
+      currentFilename = data.filename;
+      currentBlogspotUrl = data.blogspot_url;
+      showResult(data);
+      loadAllPages();
+      showNotification('✅ Page generated for ' + selectedCity.name + '!', 'success');
+      document.getElementById('total-count').textContent = parseInt(document.getElementById('total-count').textContent) + (data.cached ? 0 : 1);
+      document.getElementById('status-title').textContent = '✅ ' + selectedCity.name + ' page ready!';
+      document.getElementById('status-sub').textContent = (data.cached ? 'Cached page. ' : 'New page saved. ') + 'AI used: ' + (data.ai_provider || 'fallback');
+    } else {
+      showNotification('❌ ' + (data.error || 'Generation failed'), 'error');
+      document.getElementById('status-title').textContent = 'Generation failed';
+      document.getElementById('status-sub').textContent = data.error || 'Check your AI key settings';
+    }
+  }).catch(err => {
+    showNotification('❌ Connection error', 'error');
+    document.getElementById('status-title').textContent = 'Error occurred';
+    document.getElementById('status-sub').textContent = err.message;
+  }).finally(() => {
+    btn.disabled = false;
+    document.getElementById('btn-text').innerHTML = '⚡ Generate SEO Page';
+    setTimeout(() => { pf.style.width = '0%'; pb.style.display = 'none'; }, 1500);
+  });
+}
+
+function showResult(data) {
+  const card = document.getElementById('result-card');
+  card.classList.add('active','success');
+  document.getElementById('result-title').textContent = data.meta_title || 'Page Generated';
+  document.getElementById('result-meta').textContent = data.filename + ' · AI: ' + (data.ai_provider || 'fallback') + (data.cached ? ' · Cached' : ' · New');
+  document.getElementById('result-chip').textContent = data.cached ? '📦 Cached' : '✅ Generated';
+  document.getElementById('result-chip').className = 'chip ' + (data.cached ? 'chip-orange' : 'chip-green');
+  document.getElementById('preview-btn').href = '/preview/' + data.filename;
+  document.getElementById('blogspot-url-display').textContent = data.blogspot_url || '—';
+  document.getElementById('seo-grid').innerHTML =
+    '<div class="seo-item"><div class="seo-item-label">Primary Keyword</div><div class="seo-item-val">' + (data.primary_keyword || '—') + '</div></div>' +
+    '<div class="seo-item"><div class="seo-item-label">Meta Title</div><div class="seo-item-val">' + (data.meta_title || '—').substring(0, 60) + '</div></div>';
+  document.getElementById('kw-tags').innerHTML = (data.long_tail_keywords || []).slice(0, 6).map(k => '<span class="kw-tag">' + k + '</span>').join('');
+}
+
+function copyFilename() {
+  if (currentFilename) navigator.clipboard.writeText(currentFilename).then(() => showNotification('📋 Filename copied!', 'success'));
+}
+
+function copyBlogspotUrl() {
+  if (currentBlogspotUrl) navigator.clipboard.writeText(currentBlogspotUrl).then(() => showNotification('📋 URL copied!', 'success'));
+}
+
+function loadAllPages() {
+  fetch('/api/pages').then(r => r.json()).then(pages => {
+    document.getElementById('pages-badge').textContent = pages.length + ' pages';
+    let tbody = document.getElementById('pages-tbody');
+    if (!tbody) {
+      const sec = document.querySelector('.pages-section');
+      sec.querySelector('.empty-state') && (sec.innerHTML = '<div class="pages-header"><span class="pages-title">Generated Pages</span><span class="pages-badge" id="pages-badge">' + pages.length + ' pages</span></div>');
+      const t = document.createElement('table');
+      t.className = 'pages-table'; t.id = 'pages-table';
+      t.innerHTML = '<thead><tr><th>City / State</th><th>Primary Keyword</th><th>ZIP</th><th>AI Used</th><th>Blogspot URL</th><th>Preview</th></tr></thead><tbody id="pages-tbody"></tbody>';
+      sec.appendChild(t);
+      tbody = document.getElementById('pages-tbody');
+    }
+    tbody.innerHTML = pages.slice(0, 40).map(p =>
+      '<tr><td><div class="table-city">' + p.city + ', ' + (p.state||'').substring(0,2) + '</div></td>' +
+      '<td><div class="table-kw" title="' + (p.keyword||'') + '">' + (p.keyword||'—').substring(0,38) + '</div></td>' +
+      '<td>' + p.zip + '</td>' +
+      '<td><span class="table-prov ' + (p.provider||'fallback') + '">' + (p.provider||'fallback') + '</span></td>' +
+      '<td style="font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (p.blogspot_url ? '<a href="' + p.blogspot_url + '" target="_blank" style="color:var(--orange);">' + p.blogspot_url.replace('https://','') + '</a>' : '—') + '</td>' +
+      '<td><a href="/preview/' + p.filename + '" target="_blank" class="table-link">View ↗</a></td></tr>'
+    ).join('');
+  });
+}
+
+function showNotification(msg, type='') {
+  const n = document.getElementById('notification');
+  document.getElementById('notif-text').textContent = msg;
+  n.className = 'notification show ' + type;
+  setTimeout(() => { n.className = 'notification'; }, 3500);
+}
+</script>
+</body>
+</html>
