@@ -39,7 +39,8 @@ AI_PROVIDERS = {
     "groq": {
         "name": "Groq (FREE)",
         "url": "https://api.groq.com/openai/v1/chat/completions",
-        "model": "llama-3.1-8b-instant",
+        "model": "llama-3.3-70b-versatile",
+        "models": ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
         "free": True,
         "signup": "https://console.groq.com",
         "header_key": "Authorization",
@@ -48,7 +49,7 @@ AI_PROVIDERS = {
     "together": {
         "name": "Together AI (FREE $25 credit)",
         "url": "https://api.together.xyz/v1/chat/completions",
-        "model": "meta-llama/Llama-3-8b-chat-hf",
+        "model": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
         "free": True,
         "signup": "https://api.together.ai",
         "header_key": "Authorization",
@@ -70,7 +71,7 @@ AI_PROVIDERS = {
     "anthropic": {
         "name": "Anthropic Claude (Paid)",
         "url": "https://api.anthropic.com/v1/messages",
-        "model": "claude-haiku-4-5-20251001",
+        "model": "claude-3-5-haiku-20241022",
         "free": False,
         "signup": "https://console.anthropic.com",
         "header_key": "x-api-key",
@@ -125,6 +126,19 @@ def build_blogspot_url(city, state_abbr, zip_code):
     state_clean = state_abbr.lower()
     return f"https://dumpster{city_clean}{state_clean}{zip_code}.blogspot.com/"
 
+
+def get_geo_position(zip_code):
+    """Return lat;lon string for geo.position meta tag via zippopotam.us API."""
+    try:
+        r = requests.get(f"https://api.zippopotam.us/us/{zip_code}", timeout=5)
+        if r.status_code == 200:
+            data = r.json()
+            lat = data["places"][0]["latitude"]
+            lon = data["places"][0]["longitude"]
+            return f"{lat};{lon}"
+    except Exception:
+        pass
+    return ""
 def get_long_tail_keywords(city, state_abbr, zip_code, county):
     return [
         f"commercial dumpster rental {city} {state_abbr}",
@@ -149,22 +163,44 @@ def get_long_tail_keywords(city, state_abbr, zip_code, county):
         f"dumpster rental prices {city} {state_abbr}",
     ]
 
-def call_ai_openai_compat(provider_name, api_key, prompt):
+def call_ai_openai_compat(provider_name, api_key, prompt, retries=3):
     cfg = AI_PROVIDERS[provider_name]
     headers = {"Content-Type": "application/json", cfg["header_key"]: cfg["header_format"].format(key=api_key)}
     if provider_name == "openrouter":
         headers["HTTP-Referer"] = "https://produmpsterrental.com"
-    payload = {
-        "model": cfg["model"],
-        "messages": [
-            {"role": "system", "content": "You are an expert local SEO copywriter. Always respond with valid JSON only, no markdown, no extra text."},
-            {"role": "user", "content": prompt}
-        ],
-        "temperature": 0.85, "max_tokens": 2500,
-    }
-    r = requests.post(cfg["url"], headers=headers, json=payload, timeout=45)
-    r.raise_for_status()
-    return r.json()["choices"][0]["message"]["content"].strip()
+    models = cfg.get("models") or ([cfg["model"]] if cfg.get("model") else [])
+    if not models:
+        raise RuntimeError(f"No model configured for {provider_name}")
+    for model in models:
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": "You are an expert local SEO copywriter. Always respond with valid JSON only, no markdown, no extra text."},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.7, "max_tokens": 1500,
+        }
+        for attempt in range(retries):
+            try:
+                r = requests.post(cfg["url"], headers=headers, json=payload, timeout=60)
+                if r.status_code == 429:
+                    wait = 15 * (attempt + 1)
+                    print(f"Rate limit hit on {provider_name} ({model}), waiting {wait}s (attempt {attempt+1}/{retries})")
+                    import time; time.sleep(wait)
+                    continue
+                r.raise_for_status()
+                response_json = r.json()
+                return response_json["choices"][0]["message"]["content"].strip()
+            except requests.exceptions.Timeout:
+                print(f"Timeout on {provider_name} ({model}) attempt {attempt+1}/{retries}")
+                if attempt == retries - 1:
+                    continue  # try next model
+            except Exception as e:
+                print(f"AI Error ({provider_name}, {model}, attempt {attempt+1}): {e}")
+                if attempt == retries - 1:
+                    continue  # try next model
+                import time; time.sleep(2)
+    raise RuntimeError(f"{provider_name} failed after trying all models and {retries} attempts per model")
 
 def call_ai_anthropic(api_key, prompt):
     headers = {"Content-Type": "application/json", "x-api-key": api_key, "anthropic-version": "2023-06-01"}
@@ -176,6 +212,43 @@ def call_ai_anthropic(api_key, prompt):
     r = requests.post(AI_PROVIDERS["anthropic"]["url"], headers=headers, json=payload, timeout=45)
     r.raise_for_status()
     return r.json()["content"][0]["text"].strip()
+
+
+def build_meta_title(city, state_abbr, zip_code):
+    """Generate a meta title strictly between 50-60 chars."""
+    candidates = [
+        f"Dumpster Rental {city}, {state_abbr} {zip_code} | Pro Dumpster Rental",
+        f"Dumpster Rental {city}, {state_abbr} | Pro Dumpster Rental",
+        f"Commercial Dumpster Rental {city}, {state_abbr} {zip_code}",
+        f"Commercial Dumpster Rental {city}, {state_abbr}",
+        f"Roll-Off Dumpster Rental {city}, {state_abbr} {zip_code}",
+        f"Roll-Off Dumpster Rental {city}, {state_abbr}",
+    ]
+    for c in candidates:
+        if 50 <= len(c) <= 60:
+            return c
+    valid = [c for c in candidates if len(c) <= 60]
+    return max(valid, key=len) if valid else candidates[-1][:60]
+
+
+def build_meta_desc(city, state_abbr, zip_code):
+    """Generate a meta description strictly between 140-155 chars."""
+    core = (
+        f"Commercial dumpster rental in {city}, {state_abbr} {zip_code}. "
+        f"10–40 yard containers for contractors. "
+        f"Call (619) 759-6533 Mon–Fri 8AM–8PM EST."
+    )
+    if 140 <= len(core) <= 155:
+        return core
+    if len(core) > 155:
+        return core[:152] + "..."
+    # Too short — pad with city-specific suffix
+    pad = f" Serving {city} commercial job sites."
+    result = core + pad
+    if len(result) > 155:
+        result = result[:152] + "..."
+    return result
+
 
 def generate_seo_content(city, state, state_abbr, zip_code, county):
     saved_keys = get_saved_provider_keys()
@@ -228,36 +301,50 @@ Respond ONLY with this exact JSON structure (no markdown, no preamble, no extra 
 
     for provider in providers_to_try:
         api_key = saved_keys.get(provider)
-        try:
-            if provider == "anthropic":
-                raw = call_ai_anthropic(api_key, prompt)
-            else:
-                raw = call_ai_openai_compat(provider, api_key, prompt)
-            used_provider = provider
+        for attempt in range(2):  # retry once per provider
+            try:
+                if provider == "anthropic":
+                    raw = call_ai_anthropic(api_key, prompt)
+                else:
+                    raw = call_ai_openai_compat(provider, api_key, prompt)
+                used_provider = provider
+                import time; time.sleep(3)  # 3s delay to avoid rate limit
+                break
+            except Exception as e:
+                print(f"AI Error ({provider}, attempt {attempt+1}): {e}")
+                if attempt == 1:
+                    errors.append(f"{provider}: {e}")
+                raw = None
+        if raw:
             break
-        except Exception as e:
-            print(f"AI Error ({provider}): {e}")
-            errors.append(f"{provider}: {e}")
-            raw = None
 
     if raw:
         try:
-            raw = re.sub(r'^```json\s*', '', raw)
-            raw = re.sub(r'^```\s*', '', raw)
-            raw = re.sub(r'\s*```$', '', raw)
-            data = json.loads(raw)
+            # Aggressive JSON cleaning
+            cleaned = raw.strip()
+            # Remove markdown code fences
+            cleaned = re.sub(r'^```json\s*', '', cleaned, flags=re.MULTILINE)
+            cleaned = re.sub(r'^```\s*', '', cleaned, flags=re.MULTILINE)
+            cleaned = re.sub(r'\s*```$', '', cleaned, flags=re.MULTILINE)
+            cleaned = cleaned.strip()
+            # If model added preamble text, extract JSON object only
+            json_match = re.search(r'\{[\s\S]*\}', cleaned)
+            if json_match:
+                cleaned = json_match.group(0)
+            data = json.loads(cleaned)
             data['long_tail_keywords'] = keywords
             data['primary_keyword'] = primary_kw
             data['ai_provider'] = used_provider or 'unknown'
             return data
         except Exception as e:
-            print(f"JSON parse error: {e}")
-            raise RuntimeError('AI returned invalid JSON response. Please try a different provider or key.')
+            print(f"JSON parse error: {e}\nRaw response: {raw[:500]}")
+            # Don't raise — fall through to fallback below
 
-    raise RuntimeError('AI generation failed for all saved providers: ' + '; '.join(errors))
+    # All providers failed or JSON invalid — use fallback static content
+    print(f"Using fallback content. Provider errors: {errors}")
     return {
-        "meta_title": f"Commercial Dumpster Rental {city}, {state_abbr} {zip_code} | Pro Dumpster Rental",
-        "meta_description": f"Roll-off dumpster rental for contractors in {city}, {state_abbr} {zip_code}. 10-40 yard containers. Call (619) 759-6533. Mon-Fri 8AM-8PM EST.",
+        "meta_title": build_meta_title(city, state_abbr, zip_code),
+        "meta_description": build_meta_desc(city, state_abbr, zip_code),
         "h1": f"Commercial Dumpster Rental {city}, {state_abbr}",
         "hero_subtitle": f"Reliable roll-off container delivery for construction and commercial projects throughout {county}.",
         "intro_paragraph": f"Pro Dumpster Rental serves construction companies and commercial property managers across {city}, {state_abbr} {zip_code} with dependable roll-off dumpster delivery. Whether you are managing a large-scale commercial renovation, a demolition project, or an ongoing construction site in {county}, our team keeps your waste removal on schedule. We exclusively serve B2B clients — contractors, general contractors, and commercial facilities managers — ensuring dedicated service for professional job sites. Call (619) 759-6533 to schedule delivery to your {city} worksite.",
@@ -288,26 +375,25 @@ def generate_html_page(city, state, state_abbr, zip_code, county, content, blogs
     county_short = county.replace(" County", "").replace(" Parish", "")
 
     # ── Auto-sanitize all SEO fields ──────────────────────────────
-    # Title: hard cap 60 chars
+    # Title: must be 50-60 chars
     meta_title = content['meta_title']
-    if len(meta_title) > 60:
-        meta_title = f"Commercial Dumpster Rental {city}, {state_abbr}"
+    if not (50 <= len(meta_title) <= 60):
+        meta_title = build_meta_title(city, state_abbr, zip_code)
 
     # H1: hard cap 65 chars
     h1_raw = content['h1']
     if len(h1_raw) > 65:
         h1_raw = f"Commercial Dumpster Rental {city}, {state_abbr}"
 
-    # Meta description: hard cap 155 chars, pad if too short
+    # Meta description: must be 140-155 chars
     meta_desc = content['meta_description']
-    if len(meta_desc) > 155:
-        meta_desc = meta_desc[:152] + '...'
-    if len(meta_desc) < 130:
-        meta_desc = f"Commercial dumpster rental in {city}, {state_abbr} {zip_code}. Roll-off containers for contractors. Call (619) 759-6533 Mon-Fri 8AM-8PM EST."
+    if not (140 <= len(meta_desc) <= 155):
+        meta_desc = build_meta_desc(city, state_abbr, zip_code)
 
     schema = {
-        "@context": "https://schema.org", "@type": "HomeAndConstructionBusiness",
+        "@context": "https://schema.org", "@type": "LocalBusiness",
         "name": f"Pro Dumpster Rental - {city}",
+        "url": blogspot_url,
         "description": content['schema_description'],
         "telephone": "+16197596533", "openingHours": "Mo-Fr 08:00-20:00", "priceRange": "$$",
         "areaServed": {"@type": "City", "name": city, "containedIn": {"@type": "State", "name": state}},
@@ -324,9 +410,10 @@ def generate_html_page(city, state, state_abbr, zip_code, county, content, blogs
     faq_html = "".join([f'<div class="faq-item" itemscope itemprop="mainEntity" itemtype="https://schema.org/Question"><div class="faq-q" onclick="toggleFaq(this)" role="button" aria-expanded="false"><span itemprop="name">{f["q"]}</span><div class="faq-arrow" aria-hidden="true">+</div></div><div class="faq-a" itemscope itemprop="acceptedAnswer" itemtype="https://schema.org/Answer"><div class="faq-a-inner" itemprop="text">{f["a"]}</div></div></div>' for f in content['faq']])
     h1_display = h1_raw.replace(city, f'<span>{city}</span>', 1)
     year = datetime.now().year
+    geo_position = get_geo_position(zip_code)
 
     # OG image — use a placeholder that works (can be swapped for a real image URL)
-    og_image = "https://produmpsterrental.blogspot.com/og-image.jpg"
+    og_image = f"{blogspot_url}og-image.jpg"
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -340,7 +427,7 @@ def generate_html_page(city, state, state_abbr, zip_code, county, content, blogs
 <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
 <meta name="geo.region" content="US-{state_abbr}">
 <meta name="geo.placename" content="{city}, {state}">
-<meta name="geo.position" content="">
+<meta name="geo.position" content="{geo_position}">
 <link rel="canonical" href="{blogspot_url}">
 <meta property="og:type" content="website">
 <meta property="og:title" content="{meta_title}">
@@ -471,6 +558,23 @@ footer{{background:#0a0a0a;padding:52px 24px 24px;color:rgba(255,255,255,0.35);}
 @media(max-width:900px){{.hero-inner{{grid-template-columns:1fr;}}.call-card{{display:none;}}.footer-grid{{grid-template-columns:1fr 1fr;}}.location-grid{{grid-template-columns:1fr;}}.hero-stats{{grid-template-columns:repeat(2,1fr);}}}}
 @media(max-width:600px){{.hero{{padding:40px 20px 50px;}}.topbar{{font-size:11px;}}.footer-grid{{grid-template-columns:1fr;}}.location-facts{{grid-template-columns:1fr;}}}}
 @media print{{header,footer,.cta-banner,.topbar{{display:none;}}body{{color:black;}}}}
+/* ── Legal Modal ─────────────────────────────────────── */
+.legal-modal-overlay{{position:fixed;inset:0;background:rgba(0,0,0,0.82);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;opacity:0;pointer-events:none;transition:opacity 0.25s;}}
+.legal-modal-overlay.open{{opacity:1;pointer-events:all;}}
+.legal-modal{{background:#1c1c1c;border:1px solid rgba(255,255,255,0.1);border-radius:10px;max-width:760px;width:100%;max-height:85vh;display:flex;flex-direction:column;transform:translateY(20px);transition:transform 0.25s;}}
+.legal-modal-overlay.open .legal-modal{{transform:translateY(0);}}
+.legal-modal-header{{display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid rgba(255,255,255,0.08);flex-shrink:0;}}
+.legal-modal-header h3{{font-family:'Oswald',sans-serif;font-size:20px;color:white;text-transform:uppercase;letter-spacing:0.04em;margin:0;}}
+.legal-modal-close{{background:rgba(255,255,255,0.08);border:none;color:rgba(255,255,255,0.6);width:34px;height:34px;border-radius:50%;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;transition:all 0.2s;flex-shrink:0;}}
+.legal-modal-close:hover{{background:var(--orange);color:white;}}
+.legal-modal-body{{overflow-y:auto;padding:24px;flex:1;}}
+.legal-modal-body h4{{font-family:'Oswald',sans-serif;font-size:15px;color:var(--orange);text-transform:uppercase;letter-spacing:0.06em;margin:22px 0 8px;}}
+.legal-modal-body h4:first-child{{margin-top:0;}}
+.legal-modal-body p{{font-size:13px;color:rgba(255,255,255,0.5);line-height:1.75;margin-bottom:10px;}}
+.legal-modal-footer{{padding:16px 24px;border-top:1px solid rgba(255,255,255,0.08);text-align:right;flex-shrink:0;}}
+.legal-modal-footer button{{background:var(--orange);color:white;border:none;padding:10px 24px;border-radius:4px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:14px;text-transform:uppercase;cursor:pointer;transition:background 0.2s;}}
+.legal-modal-footer button:hover{{background:var(--orange-bright);}}
+@media(max-width:600px){{.legal-modal{{max-height:92vh;border-radius:8px 8px 0 0;position:fixed;bottom:0;left:0;right:0;max-width:100%;}}}}
 </style>
 </head>
 <body>
@@ -495,9 +599,9 @@ footer{{background:#0a0a0a;padding:52px 24px 24px;color:rgba(255,255,255,0.35);}
 </header>
 <nav aria-label="Breadcrumb" class="breadcrumb-bar">
   <ol class="breadcrumb" itemscope itemtype="https://schema.org/BreadcrumbList">
-    <li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem"><a href="https://produmpsterrental.blogspot.com/" itemprop="item"><span itemprop="name">Home</span></a><meta itemprop="position" content="1"></li>
-    <li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem"><a href="https://produmpsterrental.blogspot.com/locations/" itemprop="item"><span itemprop="name">Locations</span></a><meta itemprop="position" content="2"></li>
-    <li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem"><a href="https://produmpsterrental.blogspot.com/locations/{state_abbr.lower()}/" itemprop="item"><span itemprop="name">{state}</span></a><meta itemprop="position" content="3"></li>
+    <li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem"><a href="{blogspot_url}" itemprop="item"><span itemprop="name">Home</span></a><meta itemprop="position" content="1"></li>
+    <li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem"><a href="{blogspot_url}locations/" itemprop="item"><span itemprop="name">Locations</span></a><meta itemprop="position" content="2"></li>
+    <li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem"><a href="{blogspot_url}locations/{state_abbr.lower()}/" itemprop="item"><span itemprop="name">{state}</span></a><meta itemprop="position" content="3"></li>
     <li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem"><span itemprop="name">{city}, {state_abbr}</span><meta itemprop="position" content="4"></li>
   </ol>
 </nav>
@@ -598,11 +702,11 @@ footer{{background:#0a0a0a;padding:52px 24px 24px;color:rgba(255,255,255,0.35);}
         <li><a href="tel:+16197596533">Roofing Debris Removal</a></li>
       </ul></div>
       <div class="footer-col"><h5>Service Area</h5><ul>
-        <li><a href="https://produmpsterrental.blogspot.com/locations/{state_abbr.lower()}/">{state} Locations</a></li>
+        <li><a href="{blogspot_url}locations/{state_abbr.lower()}/">{state} Locations</a></li>
         <li><a href="{blogspot_url}">{city}, {state_abbr}</a></li>
-        <li><a href="https://produmpsterrental.blogspot.com/locations/">{county}</a></li>
+        <li><a href="{blogspot_url}locations/">{county}</a></li>
         <li><a href="{blogspot_url}">ZIP {zip_code}</a></li>
-        <li><a href="https://produmpsterrental.blogspot.com/">All 48 States</a></li>
+        <li><a href="{blogspot_url}">All 48 States</a></li>
       </ul></div>
       <div class="footer-col"><h5>Hours</h5><ul>
         <li style="color:rgba(255,255,255,0.5);">Mon–Fri</li>
@@ -611,12 +715,99 @@ footer{{background:#0a0a0a;padding:52px 24px 24px;color:rgba(255,255,255,0.35);}
         <li>Closed</li>
       </ul></div>
     </div>
-    <div class="footer-bottom"><div>&copy; {year} Pro Dumpster Rental — {city}, {state_abbr} {zip_code}</div><div style="display:flex;gap:16px;"><a href="https://produmpsterrental.blogspot.com/privacy-policy/" style="color:rgba(255,255,255,0.2);font-size:12px;">Privacy Policy</a><a href="https://produmpsterrental.blogspot.com/terms/" style="color:rgba(255,255,255,0.2);font-size:12px;">Terms of Service</a></div></div>
+    <div class="footer-bottom"><div>&copy; {year} Pro Dumpster Rental — {city}, {state_abbr} {zip_code}</div><div style="display:flex;gap:16px;"><a href="#" onclick="openModal('privacy');return false;" style="color:rgba(255,255,255,0.2);font-size:12px;">Privacy Policy</a><a href="#" onclick="openModal('terms');return false;" style="color:rgba(255,255,255,0.2);font-size:12px;">Terms of Service</a></div></div>
   </div>
 </footer>
+<!-- Legal Modal -->
+<div class="legal-modal-overlay" id="legalModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+  <div class="legal-modal">
+    <div class="legal-modal-header">
+      <h3 id="modalTitle">Policy</h3>
+      <button class="legal-modal-close" onclick="closeModal()" aria-label="Close">&times;</button>
+    </div>
+    <div class="legal-modal-body" id="modalBody"></div>
+    <div class="legal-modal-footer"><button onclick="closeModal()">Close</button></div>
+  </div>
+</div>
 <script>
 function toggleFaq(el){{const item=el.parentElement;const isOpen=item.classList.contains('open');document.querySelectorAll('.faq-item').forEach(f=>f.classList.remove('open'));if(!isOpen)item.classList.add('open');el.setAttribute('aria-expanded',!isOpen);}}
 document.querySelectorAll('a[href="tel:+16197596533"]').forEach(el=>{{el.addEventListener('click',function(){{if(typeof gtag!=='undefined')gtag('event','phone_call',{{'event_category':'CTA','event_label':'{city} {state_abbr}'}});}});}});
+
+// ── Legal Modal ────────────────────────────────────────────
+const LEGAL_CONTENT = {{
+  privacy: {{
+    title: "Privacy Policy",
+    html: `
+      <h4>Overview</h4>
+      <p>Pro Dumpster Rental ("we," "us," or "our") operates this website to connect commercial and construction clients in {city}, {state_abbr} {zip_code} with dumpster rental services. This Privacy Policy explains how we handle information collected through this site.</p>
+      <h4>Information We Collect</h4>
+      <p>We collect information you voluntarily provide when you contact us by phone at (619) 759-6533 or through any contact form on this site. This may include your name, company name, phone number, email address, and project details.</p>
+      <p>We may also automatically collect non-personal data such as browser type, pages visited, and referring URLs through standard web server logs or analytics tools. This data is used solely to improve site performance.</p>
+      <h4>How We Use Your Information</h4>
+      <p>Information you provide is used exclusively to respond to your inquiry, provide quotes, and coordinate dumpster rental services. We do not sell, rent, or share your personal information with third parties for marketing purposes.</p>
+      <h4>Cookies</h4>
+      <p>This site may use basic cookies for functionality and analytics (e.g., Google Analytics). These cookies do not collect personally identifiable information. You may disable cookies in your browser settings at any time.</p>
+      <h4>Third-Party Services</h4>
+      <p>This site is hosted on Blogger/Blogspot (Google). Your use of this site is also subject to Google's Privacy Policy available at google.com/policies/privacy. We are not responsible for the privacy practices of third-party sites linked from this page.</p>
+      <h4>Data Security</h4>
+      <p>We take reasonable precautions to protect information submitted through this site. However, no internet transmission is 100% secure. We encourage you to avoid submitting sensitive personal data through web forms.</p>
+      <h4>Children's Privacy</h4>
+      <p>This website is intended for commercial and construction businesses only. We do not knowingly collect information from individuals under 18 years of age.</p>
+      <h4>Changes to This Policy</h4>
+      <p>We may update this Privacy Policy periodically. Continued use of this site after any changes constitutes your acceptance of the revised policy.</p>
+      <h4>Contact Us</h4>
+      <p>For privacy-related questions, contact us by phone at (619) 759-6533, Monday–Friday, 8AM–8PM EST. We serve commercial clients in {city}, {state_abbr} {zip_code} and across the continental United States.</p>
+    `
+  }},
+  terms: {{
+    title: "Terms of Service",
+    html: `
+      <h4>Acceptance of Terms</h4>
+      <p>By accessing or using this website, you agree to be bound by these Terms of Service. If you do not agree with any part of these terms, please discontinue use of this site immediately.</p>
+      <h4>Service Description</h4>
+      <p>This website connects commercial and construction clients in {city}, {state_abbr} {zip_code} and surrounding areas with roll-off dumpster rental services provided by Pro Dumpster Rental. Services are available Monday–Friday, 8AM–8PM EST at (619) 759-6533.</p>
+      <h4>Eligibility</h4>
+      <p>This site and its services are intended exclusively for commercial and construction businesses. Residential or homeowner requests are not accepted. By using this site, you confirm that you are acting on behalf of a business entity.</p>
+      <h4>Accuracy of Information</h4>
+      <p>We strive to keep all information on this site accurate and up to date, including service areas, pricing ranges, and availability. However, we make no warranties regarding the completeness or accuracy of any information. All quotes are subject to confirmation by phone.</p>
+      <h4>Limitation of Liability</h4>
+      <p>Pro Dumpster Rental and its service providers shall not be liable for any indirect, incidental, or consequential damages arising from your use of this site or reliance on any information provided herein. Our total liability for any claim shall not exceed the amount paid for the specific service in question.</p>
+      <h4>Independent Operators</h4>
+      <p>This site may connect customers with independent dumpster rental operators. Each operator is solely responsible for their own licensing, insurance, and service delivery. We recommend verifying that all operators hold applicable permits required in {city}, {state_abbr}.</p>
+      <h4>Prohibited Use</h4>
+      <p>You agree not to use this site for any unlawful purpose, to transmit spam or malicious content, or to interfere with the site's operation. Any unauthorized use may result in termination of access.</p>
+      <h4>Intellectual Property</h4>
+      <p>All content on this site, including text, layout, and design, is the property of Pro Dumpster Rental and may not be reproduced without written permission.</p>
+      <h4>Governing Law</h4>
+      <p>These Terms shall be governed by the laws of the State of {state_abbr}, without regard to its conflict of law provisions. Any disputes shall be resolved in the appropriate courts serving {city}, {state_abbr} {zip_code}.</p>
+      <h4>Changes to Terms</h4>
+      <p>We reserve the right to update these Terms at any time. Continued use of this site after changes are posted constitutes your acceptance of the revised Terms.</p>
+      <h4>Contact</h4>
+      <p>Questions about these Terms? Call us at (619) 759-6533, Monday–Friday, 8AM–8PM EST. We serve {city}, {state_abbr} {zip_code} and the continental United States.</p>
+    `
+  }}
+}};
+
+function openModal(type) {{
+  const data = LEGAL_CONTENT[type];
+  if (!data) return;
+  document.getElementById('modalTitle').textContent = data.title;
+  document.getElementById('modalBody').innerHTML = data.html;
+  const overlay = document.getElementById('legalModal');
+  overlay.classList.add('open');
+  document.body.style.overflow = 'hidden';
+  overlay.querySelector('.legal-modal-close').focus();
+}}
+function closeModal() {{
+  document.getElementById('legalModal').classList.remove('open');
+  document.body.style.overflow = '';
+}}
+document.getElementById('legalModal').addEventListener('click', function(e) {{
+  if (e.target === this) closeModal();
+}});
+document.addEventListener('keydown', function(e) {{
+  if (e.key === 'Escape') closeModal();
+}});
 </script>
 </body>
 </html>"""
