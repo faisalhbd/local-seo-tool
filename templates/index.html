@@ -58,6 +58,15 @@
     .city-name{font-size:13px;font-weight:600;color:var(--dark);}
     .city-meta{font-size:11px;color:var(--gray-500);margin-top:2px;}
 
+    /* CITY SEARCH BOX */
+    .city-search-wrap{position:relative;margin-bottom:8px;}
+    .city-search-input{width:100%;padding:9px 34px 9px 12px;border:1.5px solid var(--border);border-radius:var(--radius);font-size:13px;color:var(--dark);background:white;outline:none;font-family:'Barlow',sans-serif;transition:border-color 0.15s;}
+    .city-search-input:focus{border-color:var(--orange);box-shadow:0 0 0 3px var(--orange-light);}
+    .city-search-icon{position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:14px;color:var(--gray-500);pointer-events:none;}
+    .city-search-clear{position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:14px;color:var(--gray-500);cursor:pointer;display:none;background:none;border:none;padding:0;line-height:1;}
+    .city-search-clear:hover{color:var(--orange);}
+    .city-no-result{font-size:12px;color:var(--gray-500);text-align:center;padding:14px 0;display:none;}
+
     /* KW PREVIEW */
     .kw-preview{display:none;margin-top:14px;}
     .kw-preview.active{display:block;}
@@ -270,6 +279,11 @@
 
       <div class="city-selector" id="city-selector">
         <label>City / Town</label>
+        <div class="city-search-wrap">
+          <input type="text" class="city-search-input" id="city-search" placeholder="🔍 Search by city name or ZIP..." oninput="filterCities(this.value)" autocomplete="off">
+          <button class="city-search-clear" id="city-search-clear" onclick="clearCitySearch()" title="Clear">✕</button>
+        </div>
+        <div class="city-no-result" id="city-no-result">No matching city found.</div>
         <div class="city-grid" id="city-grid"></div>
       </div>
 
@@ -460,26 +474,56 @@ function showMsg(provider, msg, type) {
 }
 
 // LOCATION
+let allCityCards = []; // store city data for filtering
+
 function loadCities(state) {
   selectedState = state; selectedCity = null;
   document.getElementById('generate-btn').disabled = true;
   document.getElementById('kw-preview').classList.remove('active');
   document.getElementById('city-selector').classList.remove('active');
+  // reset search box
+  const si = document.getElementById('city-search');
+  if (si) { si.value = ''; document.getElementById('city-search-clear').style.display='none'; document.getElementById('city-no-result').style.display='none'; }
   if (!state) return;
   fetch('/api/cities/' + encodeURIComponent(state), {credentials: 'same-origin'})
     .then(r => r.json())
     .then(data => {
       const grid = document.getElementById('city-grid');
       grid.innerHTML = '';
+      allCityCards = [];
       data.cities.forEach(city => {
         const c = document.createElement('div');
         c.className = 'city-card';
         c.innerHTML = '<div class="city-name">' + city.name + '</div><div class="city-meta">' + city.zip + ' · ' + city.county + '</div>';
         c.onclick = () => selectCity(city, data.abbreviation, c);
+        c.dataset.name = city.name.toLowerCase();
+        c.dataset.zip = city.zip;
         grid.appendChild(c);
+        allCityCards.push(c);
       });
       document.getElementById('city-selector').classList.add('active');
     });
+}
+
+function filterCities(val) {
+  const q = val.trim().toLowerCase();
+  const clear = document.getElementById('city-search-clear');
+  const noResult = document.getElementById('city-no-result');
+  clear.style.display = q ? 'block' : 'none';
+  let visible = 0;
+  allCityCards.forEach(c => {
+    const match = !q || c.dataset.name.includes(q) || c.dataset.zip.includes(q);
+    c.style.display = match ? '' : 'none';
+    if (match) visible++;
+  });
+  noResult.style.display = visible === 0 && q ? 'block' : 'none';
+}
+
+function clearCitySearch() {
+  const si = document.getElementById('city-search');
+  si.value = '';
+  filterCities('');
+  si.focus();
 }
 
 function selectCity(city, stateAbbr, el) {
